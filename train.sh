@@ -1,0 +1,110 @@
+#! /bin/bash
+
+set -x
+set +e
+
+# 假设本地训练方式使用的训练代码（从云效平台clone）为：/mnt/ve_parking/sunlibo/psd/mmdetection3d/
+# 加载本地独立的python环境训练，备份的python环境包来自：/mnt/ve_parking/kunkka/bins/mmdet3d.tgz python3.8
+# 可以解压上面压缩包mmdet3d.tgz到/mnt/ve_parking/sunlibo/bins/，然后执行：tar -xzf mmdet3d.tgz
+# 执行：/mnt/ve_parking/sunlibo/bins/mmdet3d/bin/python3 -m pip list |grep mmdet 可以查看mmdet3d本地包指向的本地环境，
+# 如果不对，需要cd /mnt/ve_parking/sunlibo/psd/mmdetection3d/ 使用来重新安装mmdet3d，安装命令为：
+# /mnt/ve_parking/sunlibo/bins/sunlibo/bin/python3 -m pip install -e . 进行本地安装，检查安装可以使用上述方式查看安装包指向
+# 运行参数说明：
+# $1 代表挂载盘下的用户目录，如sunlibo
+# $2 训练加载的离线的mmdetection3d训练框架所在目录
+# $3 训练加载的config文件
+# $4 训练保存的模型及日志目录
+
+
+# bash pipeline_preload.sh
+# bash pipeline_train.sh
+
+
+# #不传入train.sh参数时，常规训练
+# if [ -z $1 ];
+# then
+#     # Train for others, comment above entrance.
+#     bash pipeline_preload.sh
+#     bash pipeline_train.sh
+# else
+#     # Train for loop only
+#     # bash train.sh sunlibo psd hm_psd_vpformer.py
+#     bash pipeline_loop.sh $1 $2 $3 loop_psd_bev_ipm2grid240b32_e32_$(date +%s)
+# fi
+
+
+
+#################################################### multi-run, slb add，一次提交多次训练
+set -x
+set +e
+
+mkdir -p /training_logs
+pip config set global.index-url https://mirrors.aliyun.com/pypi/simple/
+pip config set install.trusted-host mirrors.aliyun.com
+# pip install shapely
+# pip install rtree
+
+# # 安装Engine
+# sh -c 'echo "deb http://packages.ros.org/ros/ubuntu $(lsb_release -sc) main" > /etc/apt/sources.list.d/ros-latest.list'
+# apt install curl
+# curl -s https://raw.githubusercontent.com/ros/rosdistro/master/ros.asc | apt-key add -
+# apt install ros-melodic-ros-base
+# echo "source /opt/ros/melodic/setup.bash" >> ~/.bashrc
+# source ~/.bashrc
+
+# if [ -z "${HM_WORK_HOME}" ];then
+#   HM_WORK_HOME=${PWD}
+# fi
+
+# mkdir ~/cloud_path
+# chmod 700 ~/cloud_path
+# cd ${HM_WORK_HOME}
+# cp tools/ssh_keys/* ~/cloud_path
+# cat ~/cloud_path/id_rsa.pub >> ~/cloud_path/authorized_keys
+# chmod 600 ~/cloud_path/authorized_keys
+# chmod 600 ~/cloud_path/id_rsa
+# touch ~/cloud_path/known_hosts
+# chmod 644 ~/cloud_path/known_hosts
+
+# cd ${HM_WORK_HOME}
+
+# echo "pipeline init done"
+
+
+
+mkdir -p /mnt && ln -s /share /mnt/ve_parking
+sleep 1s
+if [ -z "${HM_WORK_HOME}" ];then
+  HM_WORK_HOME=${PWD}
+fi
+cd ${HM_WORK_HOME}
+
+
+startTime=`date +%Y%m%d-%H:%M:%S`
+startTime_s=`date +%s`
+
+
+
+# lucas提交任务进行本地化环境的训练
+# 修改配置参数尽量在配置文件中修改！
+# python环境及mmdet3d本地包依赖：/mnt/ve_parking/sunlibo/bins/mmdet3d/bin/python3
+export PATH="/mnt/ve_parking/sunlibo/bins/sunlibo/bin/:${PATH}"
+# /mnt/ve_parking/sunlibo/bins/sunlibo/bin/python3 -m pip install -e .
+cd /share/sunlibo/projects/bevformer
+# mkdir data
+# ln -s /oss://haomo-algorithms/release/algorithms/manual_created_cards/628c5f667844160dda20fcc8  /mnt/ve_parking/sunlibo/projects/fastbev/data/nuscenes
+# ln -s /tos://haomo-public/lucas-generation/public_datasets/nuScenes  /mnt/ve_parking/sunlibo/projects/bevformer/data/nuscenes
+if [ -z "$GPUS" ]; then
+    # 这里使用nvidia-smi命令来获取可用GPU数量
+    # 请根据您的系统环境调整这个命令
+    GPUS=$(nvidia-smi --query-gpu=name --format=csv,noheader | wc -l)
+fi
+TRAIN_CONFIG=projects/configs/bevformer/bevformer_base.py
+bash tools/ddp_train.sh /share/sunlibo/projects/bevformer/$TRAIN_CONFIG $GPUS
+
+endTime=`date +%Y%m%d-%H:%M:%S`
+endTime_s=`date +%s`
+sumTime=$[ $endTime_s - $startTime_s ]
+echo ""
+echo "########################train " "$startTime ---> $endTime" "cost time: $sumTime seconds"
+echo ""
